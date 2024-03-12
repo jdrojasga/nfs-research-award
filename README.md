@@ -1,6 +1,19 @@
 # nfs-research-award
 Repository with the classification of abstracts from the NFS in order to solve the technical test to be part of Globant.
 
+## Instructions
+
+The idea of this challenge is to identify in a better way your capacities to translate data into assets, we expect a good pipeline and solution that you can understand and translate. Select one of the below problems where it is affordable to create an asset using python (scripts files is prefer) where we can identify whole data process, not only the modeling part, like data pipeline/flow, but you can develop a notebook file. Remember to make it available over github
+
+*Hint:*
+- Highlight variables or patterns using EDA
+- Be sure to clarify your hypothesis
+- Validate your functions
+- Be clear with the pipeline
+- Readme and Requirements files are a plus
+
+Your task is developing an unsupervised model which classifies abstracts into a topic (discover them!). Indeed, your goal is to group abstracts based on their semantic similarity. **Aside notes: All fields in every abstract file wouldn’t be needed. Be keen.**
+
 ## Installation
 
 To use this repo first, you have to create an environment using conda:

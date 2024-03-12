@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "nfs-topic-classification"
+version = "0.1.0"
+description = "Project that classifies topics from NFS abstracts"
+authors = ["jdrojasga <jdrojasga@unal.edu.co>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.2.1"
+xmltodict = "^0.13.0"
+ipykernel = "^6.29.3"
+nltk = "^3.8.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
