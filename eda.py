@@ -23,10 +23,11 @@ import sys
 import re
 import json
 import random
+from pipeline.dataloader import AbstractNarrationDataset
 
 # %%
 # look for the dataset folder that is in the previous folder to this file
-dataset_folder = os.path.abspath(os.path.join(os.getcwd(), '../dataset'))
+dataset_folder = os.path.abspath(os.path.join(os.getcwd(), "dataset"))
 
 
 # %%
@@ -37,27 +38,27 @@ def get_xml_as_dict(file_path: str) -> dict:
 
     Arguments:
         file_path:
-            The path to the XML file to read. 
-    
+            The path to the XML file to read.
+
     Returns:
-        A dictionary with the data from the XML file. If the file is not found, it 
+        A dictionary with the data from the XML file. If the file is not found, it
         returns FileNotFoundError
     """
     try:
         # open the file
-        with open(file_path, 'r') as file:
+        with open(file_path, "r") as file:
             # read the file
             data = file.read()
             # convert the XML to a dictionary
             return xmltodict.parse(data)
     # manage error in case the file is not found
     except FileNotFoundError:
-        print(f'File not found: {file_path}')
+        print(f"File not found: {file_path}")
         return None
 
 
 # %%
-get_xml_as_dict(os.path.join(dataset_folder, 'books.xml'))
+get_xml_as_dict(os.path.join(dataset_folder, "books.xml"))
 
 # %%
 # read the file using the xmltodict library
@@ -66,12 +67,9 @@ random_file = random.choice(os.listdir(dataset_folder))
 
 # define the file_path
 file_path = os.path.join(dataset_folder, random_file)
-print('Reading file:', file_path)
+print("Reading file:", file_path)
 # read the XML file
 file_dict = get_xml_as_dict(file_path)
-
-# %%
-get_xml_as_dict(file_path)
 
 # %%
 # print the dictionary in a pretty format
@@ -187,6 +185,7 @@ print(json.dumps(file_dict, indent=2))
 # ```
 # Our objective is to classify the abstract topic, for this reason we are interested in the key `AbstractNarration`, so we are going to extract that value. Now note that the information contained in the key `ProgramElement` is the main topic of the article. For that reason we are going to extract these two values to solve our task. But before define functions and organize our info, let's review that this value appears in the majority of the files disposed in the dataset.
 
+
 # %%
 def get_award_info_from_dict(xml_dict: dict) -> dict:
     """
@@ -194,20 +193,20 @@ def get_award_info_from_dict(xml_dict: dict) -> dict:
 
     Arguments:
         xml_dict:
-            The dictionary with the data from the XML file. 
-    
+            The dictionary with the data from the XML file.
+
     Returns:
-        A dictionary with the information about the awards. If the awards are not found, it 
+        A dictionary with the information about the awards. If the awards are not found, it
         returns an empty dictionary.
     """
-    if 'rootTag' in xml_dict:
-        if 'Award' in xml_dict['rootTag']:
-            return xml_dict['rootTag']['Award']
+    if "rootTag" in xml_dict:
+        if "Award" in xml_dict["rootTag"]:
+            return xml_dict["rootTag"]["Award"]
         else:
-            print('Award not found')
+            print("Award not found")
             return {}
     else:
-        print('rootTag not found')
+        print("rootTag not found")
         return {}
 
 
@@ -231,9 +230,12 @@ for file_name in os.listdir(dataset_folder):
             keys_count[key] += 1
 
 # %%
-print(f'The amount of files disposed in the dataset is {len(os.listdir(dataset_folder))}')
-print('The amount of dictionaries that have the important keys is:')
+print(
+    f"The amount of files disposed in the dataset is {len(os.listdir(dataset_folder))}"
+)
+print("The amount of dictionaries that have the important keys is:")
 print(f'Abstracts: {keys_count.get("AbstractNarration", 0)}')
+print(f'Organization: {keys_count.get("Organization", 0)}')
 print(f'Program Element: {keys_count.get("ProgramElement", 0)}')
 
 # %% [markdown]
@@ -241,7 +243,7 @@ print(f'Program Element: {keys_count.get("ProgramElement", 0)}')
 
 # %%
 # count the amount of dictionaries that have each key
-programs_count = {}
+programs_type_count = {}
 
 # iterate over all the files in the dataset folder
 for file_name in os.listdir(dataset_folder):
@@ -253,16 +255,16 @@ for file_name in os.listdir(dataset_folder):
     # if the award_info is not empty
     if award_info != {}:
         try:
-            program_element = type(award_info['ProgramElement'])
-            if program_element not in programs_count:
-                programs_count[program_element] = 0
+            program_element = type(award_info["ProgramElement"])
+            if program_element not in programs_type_count:
+                programs_type_count[program_element] = 0
             # increase the count of the programs
-            programs_count[program_element] += 1
+            programs_type_count[program_element] += 1
         except:
-            print('ProgramElement not found')
+            print("ProgramElement not found")
 
 # %%
-programs_count
+programs_type_count
 
 # %% [markdown]
 # When the type of the programs count is a list of dictionaries we are going to extract the first one, and let's count the different programs that the dataset have.
@@ -281,46 +283,57 @@ for file_name in os.listdir(dataset_folder):
     # if the award_info is not empty
     if award_info != {}:
         try:
-            program_element_dict = award_info['ProgramElement']
+            program_element_dict = award_info["ProgramElement"]
             # review if the program_element_dict is a list
             if isinstance(program_element_dict, list):
                 program_element_dict = program_element_dict[0]
-            program_element = program_element_dict['Text']
+            program_element = program_element_dict["Text"]
             if program_element not in programs_count:
                 programs_count[program_element] = 0
             # increase the count of the programs
             programs_count[program_element] += 1
         except:
-            print('ProgramElement not found')
+            print("ProgramElement not found")
 
 # %%
 programs_count
 
 
 # %%
+# count the amount of dictionaries that have each key
+organization_count = {}
+
+# iterate over all the files in the dataset folder
+for file_name in os.listdir(dataset_folder):
+    # get the file path
+    file_path = os.path.join(dataset_folder, file_name)
+    # read the XML file
+    file_dict = get_xml_as_dict(file_path)
+    award_info = get_award_info_from_dict(file_dict)
+    # if the award_info is not empty
+    if award_info != {}:
+        try:
+            organization_dict = award_info["Organization"]
+            # review if the organization_dict is a list
+            if isinstance(organization_dict, list):
+                organization_dict = organization_dict[0]
+            organization_directorate = organization_dict["Directorate"]["LongName"]
+            if organization_directorate not in organization_count:
+                organization_count[organization_directorate] = 0
+            # increase the count of the programs
+            organization_count[organization_directorate] += 1
+        except:
+            print("ProgramElement not found")
+
+# %%
+organization_count
+
+# %%
 # TODO: define which model I will be use
 
 # %% [markdown]
 # ### Abstract clean pipeline
-# In order to train the model ??? we have to clean all the abstracts strings and then vectorize to utilize the technique. To do that, let's review if there are special characters that we can clean easily.
-
-# %%
-# class that will be used to load the dataset
-class AbstractNarrationDataset:
-    def __init__(self, dataset_folder: str):
-        self.dataset_folder = dataset_folder
-        self.files = os.listdir(dataset_folder)
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, idx):
-        file_name = self.files[idx]
-        file_path = os.path.join(self.dataset_folder, file_name)
-        file_dict = get_xml_as_dict(file_path)
-        award_info = get_award_info_from_dict(file_dict)
-        abstract = award_info['AbstractNarration']
-        return abstract
+# In order to train the model ??? we have to clean all the abstracts strings and then vectorize to utilize the technique. To do that, let's review if there are special characters that we can clean easily. The dataset loader is included as a package and extract the abstract of each file.
 
 
 # %%
@@ -334,7 +347,7 @@ import textwrap
 
 random_indexes = random.sample(range(len(abstract_narration_dataset)), 3)
 for idx in random_indexes:
-    print(f'Abstract {idx + 1}')
+    print(f"Abstract {idx + 1}")
     # print the abstract but not allow more than 100 characters per line
     print(textwrap.fill(abstract_narration_dataset[idx], 120))
     print()
@@ -349,9 +362,10 @@ from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 
 # Initialize NLTK resources
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
+nltk.download("punkt")
+nltk.download("stopwords")
+nltk.download("wordnet")
+
 
 # clean the abstract by removing the characters that generate &lt;br/&gt;&lt;br/&gt;
 def clean_abstract(abstract: str, lemmatize: bool = False) -> str:
@@ -363,39 +377,43 @@ def clean_abstract(abstract: str, lemmatize: bool = False) -> str:
 
     Arguments:
         abstract:
-            The abstract to clean. 
+            The abstract to clean.
         lemmatize:
             If True, the words will be lemmatized.
-    
+
     Returns:
         A string with the abstract cleaned.
     """
     abstract = abstract.lower()
-    abstract = abstract.replace('&lt;br/&gt;', '')
-    abstract = re.sub(r'http\S+', '', abstract)
+    abstract = abstract.replace("&lt;br/&gt;", "")
+    abstract = re.sub(r"http\S+", "", abstract)
     # drop the punctuation except the - character
-    abstract = re.sub(r'[^\w\s-]', '', abstract)
+    abstract = re.sub(r"[^\w\s-]", "", abstract)
 
     words = word_tokenize(abstract)
-    stop_words = set(stopwords.words('english'))
+    stop_words = set(stopwords.words("english"))
     if lemmatize:
         lemmatizer = WordNetLemmatizer()
-        cleaned_abstract = [lemmatizer.lemmatize(word) for word in words if word.isalnum() and word not in stop_words]
+        cleaned_abstract = [
+            lemmatizer.lemmatize(word)
+            for word in words
+            if word.isalnum() and word not in stop_words
+        ]
     else:
         cleaned_abstract = [word for word in words if word not in stop_words]
-    return ' '.join(cleaned_abstract)
+    return " ".join(cleaned_abstract)
 
 
 # %%
 random_indexes = random.sample(range(len(abstract_narration_dataset)), 5)
 for idx in random_indexes:
-    print(f'Abstract {idx + 1}')
+    print(f"Abstract {idx + 1}")
     abstract = clean_abstract(abstract_narration_dataset[idx])
     # print the abstract but not allow more than 100 characters per line
     print(textwrap.fill(abstract, 120))
     abstract = clean_abstract(abstract_narration_dataset[idx], lemmatize=True)
     # print the abstract but not allow more than 100 characters per line
-    print('\nLemmatized:')
+    print("\nLemmatized:")
     print(textwrap.fill(abstract, 120))
     print()
 
@@ -407,10 +425,11 @@ print(textwrap.fill(abstract, 120))
 
 # %%
 tokenize = word_tokenize(abstract_narration_dataset[3022])
-list_stop = set(stopwords.words('english'))
+list_stop = set(stopwords.words("english"))
 abstract = [word for word in tokenize if word not in list_stop]
 
 # %%
-abstract
+# initialize the dataset including the cleaning process
+abstract_narration_clean_dataset = AbstractNarrationDataset(dataset_folder, clean=True)
 
 # %%
