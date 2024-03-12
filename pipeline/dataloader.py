@@ -98,6 +98,9 @@ class AbstractNarrationDataset:
         - lowercase
         - removing the characters that generate &lt;br/&gt;
         - removing the URLs
+        - removing the punctuation
+        - removing the stop words
+        - lemmatizing the words if lemmatize is True
 
         Arguments:
             abstract:
@@ -118,7 +121,6 @@ class AbstractNarrationDataset:
         words = word_tokenize(abstract)
         stop_words = set(stopwords.words("english"))
         if lemmatize:
-            nltk.download("wordnet")
             lemmatizer = WordNetLemmatizer()
             cleaned_abstract = [
                 lemmatizer.lemmatize(word)
