@@ -19,16 +19,30 @@
 # %load_ext autoreload
 # %autoreload 2
 
+# %% [markdown]
+# ### Including libraries
+# These libraries will be used across the jupyter notebook.
+
 # %%
 # include libraries to work with XML
-import xml.etree.ElementTree as ET
+import matplotlib.pyplot as plt
 import xmltodict
 import os
-import sys
 import re
 import json
 import random
+import pandas as pd
+from collections import Counter
+import numpy as np
 from pipeline.dataloader import AbstractNarrationDataset, CleanAbstract
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.manifold import TSNE
+import textwrap
+
+# %% [markdown]
+# ## Dataset
+# Now we are going to define the path in which the dataset is available, and also give a look into the XML files as dictionary using the library `xmltodict`.
 
 # %%
 # look for the dataset folder that is in the previous folder to this file
@@ -63,10 +77,6 @@ def get_xml_as_dict(file_path: str) -> dict:
 
 
 # %%
-get_xml_as_dict(os.path.join(dataset_folder, "2035012.xml"))
-
-# %%
-# read the file using the xmltodict library
 # get a random file from the dataset folder
 random_file = random.choice(os.listdir(dataset_folder))
 
@@ -76,10 +86,8 @@ print("Reading file:", file_path)
 # read the XML file
 file_dict = get_xml_as_dict(file_path)
 
-# %%
 # print the dictionary in a pretty format
 print(json.dumps(file_dict, indent=2))
-
 
 # %% [markdown]
 # Let's look the json extracted for the XML file `2003434.xml`
@@ -188,10 +196,11 @@ print(json.dumps(file_dict, indent=2))
 #   "FUND_OBLG": "2020~109079"
 # }
 # ```
-# Our objective is to classify the abstract topic, for this reason we are interested in the key `AbstractNarration`, so we are going to extract that value. Now note that the information contained in the key `ProgramElement` is the main topic of the article. For that reason we are going to extract these two values to solve our task. But before define functions and organize our info, let's review that this value appears in the majority of the files disposed in the dataset.
+# Our objective is to classify the abstract topic, for this reason we are interested in the key `AbstractNarration`, so we are going to extract that value. Once we get a model that provide us topics for each abstract we are going to compare with the `Organization` and `ProgramElement` because these two have information related to the article.
 
 
 # %%
+# function to extract the information about the awards from the XML dictionary
 def get_award_info_from_dict(xml_dict: dict) -> dict:
     """
     Get the information about the awards from the XML dictionary
@@ -214,6 +223,9 @@ def get_award_info_from_dict(xml_dict: dict) -> dict:
         print("rootTag not found")
         return {}
 
+
+# %% [markdown]
+# To explore the information contained in each file, we are going to count the amount of keys that are available. We are putting special attention in the `AbstractNarration` one.
 
 # %%
 # count the amount of dictionaries that have each key
@@ -242,9 +254,6 @@ print("The amount of dictionaries that have the important keys is:")
 print(f'Abstracts: {keys_count.get("AbstractNarration", 0)}')
 print(f'Organization: {keys_count.get("Organization", 0)}')
 print(f'Program Element: {keys_count.get("ProgramElement", 0)}')
-
-# %% [markdown]
-# As you can note almost the 100% of the files have that value that can help us to guide our model. Now we are going to create the pipeline to clean the data. As you can see to calculate the previous values we iterate over all the files, but in fact when we are going to train a model we don't need to charge all the information, so we can create a DataLoader that will load only the information needed and this DataLoader will process the information only when is required to be used.
 
 # %%
 # count the amount of dictionaries that have each key
@@ -333,26 +342,19 @@ for file_name in os.listdir(dataset_folder):
 # %%
 organization_count
 
-# %%
-# TODO: define which model I will be use
-
 # %% [markdown]
+# ## DataLoader
+# As you can note almost the 100% of the files have that value that can help us to guide our model. Now we are going to create the pipeline to clean the data. As you can see to calculate the previous values we iterate over all the files, but in fact when we are going to train a model we don't need to charge all the information, so we can create a DataLoader that will load only the information needed and this DataLoader will process the information only when is required to be used. This DataLoader is an abstract class that is stored in the `pipeline.dataloader` module. The development of the `AbstractNarrationDataset` was doing during the construction of this Jupyter, in a first instance we thought that all the files had an abstract, which was not true, but all of these articles are being excluded in the initialization of the class.
+#
 # ### Abstract clean pipeline
-# In order to train the model ??? we have to clean all the abstracts strings and then vectorize to utilize the technique. To do that, let's review if there are special characters that we can clean easily. The dataset loader is included as a package and extract the abstract of each file.
-
+# In order to train the model Latent Dirichlet allocation (LDA) we have to clean all the abstracts strings and then vectorize. The data clean process was an iterative execution in which were selected randomly abstracts in order to detect the possible special characters, but always having in mind that these texts are related to articles that was awarded, so the content of each one has good redaction.
 
 # %%
 # initialize the dataset
 abstract_narration_dataset = AbstractNarrationDataset(dataset_folder, None)
 
 # %%
-abstract_narration_dataset[0]
-
-# %%
 # Select a random list of abstracts
-import textwrap
-
-
 random_indexes = random.sample(range(len(abstract_narration_dataset)), 3)
 for idx in random_indexes:
     print(f"Abstract {idx + 1}")
@@ -361,7 +363,14 @@ for idx in random_indexes:
     print()
 
 # %% [markdown]
-# The abstracts are paragraphs that are well written, so they don't need so much preprocessing techniques. We are going for the first stage only focus on drop stop words, particular characters that appear from the HTML structure
+# The abstracts are paragraphs that are well written (as we mention before), so they don't need so much preprocessing techniques. We are going for the first stage only focus on drop stop words, particular characters that appear from the HTML structure. Here is a glance of the first iteration of the function to clean the text. If you want to review the final function see the class `CleanAbstract` contained in the same `pipeline.dataloader` module. The function that clean the abstracts follow the next logic:
+# - lowercase
+# - remove the characters that generate &lt;br/&gt;
+# - remove the URLs and websites
+# - remove the punctuation (except - character when appears between two words)
+# - transform the strings like 'covid-19' into 'covid19'
+# - remove the stop words (including new ones result of the EDA)
+# - lemmatize the words, if the lemmatize is True
 
 # %%
 import nltk
@@ -412,6 +421,19 @@ def clean_abstract(abstract: str, lemmatize: bool = False) -> str:
     return " ".join(cleaned_abstract)
 
 
+# %% [markdown]
+# We pass the class `CleanAbstract` as an attribute for the pipeline, in order to iterate easily variations on the clean process that can provide us a better performance in the model.
+
+# %%
+# initialize the dataset including the cleaning process
+abstract_narration_clean_dataset = AbstractNarrationDataset(
+    dataset_folder, clean=CleanAbstract()
+)
+# initialize the dataset including the lemmatize process
+abstract_narration_lemmatize_dataset = AbstractNarrationDataset(
+    dataset_folder, clean=CleanAbstract(lemmatize=True)
+)
+
 # %%
 random_indexes = random.sample(range(len(abstract_narration_dataset)), 1)
 for idx in random_indexes:
@@ -425,25 +447,20 @@ for idx in random_indexes:
     print(textwrap.fill(abstract, 120))
     print()
 
-# %%
-# initialize the dataset including the cleaning process
-abstract_narration_clean_dataset = AbstractNarrationDataset(dataset_folder, clean=CleanAbstract())
-# initialize the dataset including the lemmatize process
-abstract_narration_lemmatize_dataset = AbstractNarrationDataset(dataset_folder, clean=CleanAbstract(lemmatize=True))
-
 # %% [markdown]
 # Now that we have the classes to load the information an also to do a clean process we are going to do an exploratory analysis in terms of the amount of words that appears in the abstracts, such as the length of each one.
 
 # %%
 # calculate the length of the abstracts
 abstracts_length = [len(abstract.split()) for abstract in abstract_narration_dataset]
-abstracts_clean_length = [len(abstract.split()) for abstract in abstract_narration_clean_dataset]
-abstracts_lemmatize_length = [len(abstract.split()) for abstract in abstract_narration_lemmatize_dataset]
+abstracts_clean_length = [
+    len(abstract.split()) for abstract in abstract_narration_clean_dataset
+]
+abstracts_lemmatize_length = [
+    len(abstract.split()) for abstract in abstract_narration_lemmatize_dataset
+]
 
 # %%
-# create a histogram of the length of the abstracts
-import matplotlib.pyplot as plt
-
 # create a figure with 3 subplots, in each subplot include the histogram of the length of the abstracts
 fig, axs = plt.subplots(1, 3, figsize=(10, 4))
 axs[0].hist(abstracts_length, bins=20)
@@ -464,15 +481,6 @@ axs[2].set_ylabel("Frequency")
 plt.tight_layout()
 plt.show()
 
-# %%
-len(abstracts_clean_length)
-
-# %%
-abstract_narration_dataset[2798]
-
-# %%
-abstract_narration_clean_dataset[2798]
-
 # %% [markdown]
 # Once we clean the data the distribution of cleaned and lemmatized seems similar. This is due to in the cleaning process we are extracting stop words and punctuation that can extend the length of the abstracts. Now we are going to count the distinct words generated after each cleaning process to see if there is some word that repeat a lot and can be also reduced using a technique of cleaning.
 
@@ -492,22 +500,24 @@ for abstract in abstract_narration_clean_dataset:
         words_clean_frequency[word] += 1
 
 # %%
-words_clean_frequency
-
-# %%
-# transform the dictionary into a dataframe
-import pandas as pd
-
 # create a dataframe with the words and the frequency
 words_clean_frequency_df = pd.DataFrame(
-    {"word": list(words_clean_frequency.keys()), "frequency": list(words_clean_frequency.values())}
+    {
+        "word": list(words_clean_frequency.keys()),
+        "frequency": list(words_clean_frequency.values()),
+    }
 )
 
 # sort the dataframe by the frequency
-words_clean_frequency_df = words_clean_frequency_df.sort_values("frequency", ascending=False)
+words_clean_frequency_df = words_clean_frequency_df.sort_values(
+    "frequency", ascending=False
+)
 
 # show the first 30 rows of the dataframe
 words_clean_frequency_df.head(30)
+
+# %% [markdown]
+# As you can note (and it was detected in the model training) there are words that for this context we can consider as stop words, that words are `["project", "research", "using", "support", "impact", "student"]`. After include that in the clean class the words related to each context improve in difference between topic and topic.
 
 # %%
 # create a dictionary with the frequency of the words in all the abstracts
@@ -527,68 +537,192 @@ for abstract in abstract_narration_lemmatize_dataset:
 # %%
 # create a dataframe with the words and the frequency
 words_lemmatize_frequency_df = pd.DataFrame(
-    {"word": list(words_lemmatize_frequency.keys()), "frequency": list(words_lemmatize_frequency.values())}
+    {
+        "word": list(words_lemmatize_frequency.keys()),
+        "frequency": list(words_lemmatize_frequency.values()),
+    }
 )
 
 # sort the dataframe by the frequency
-words_lemmatize_frequency_df = words_lemmatize_frequency_df.sort_values("frequency", ascending=False).reset_index(drop=True)
+words_lemmatize_frequency_df = words_lemmatize_frequency_df.sort_values(
+    "frequency", ascending=False
+).reset_index(drop=True)
 
 # show the first 30 rows of the dataframe
 words_lemmatize_frequency_df.head(30)
 
-# %%
-words_lemmatize_frequency_df[words_lemmatize_frequency_df["frequency"] >= 100].sample(30)
+# %% [markdown]
+# ### Topic modelling
+# Once the pipeline to load and transform the data is completed, we are going to use the Latent Dirichilet Allocation (LDA) algorithm in order to obtain a classification of the topics from the abstracts. To do this, we are going to use the dataset lemmatized, and we are going to set as `max_features` in the vectorizer function 800 (due the biggest one have a length of 704, but for new articles we can have a bigger length).
 
 # %%
-string = '-'
-# split string by '-'
-string_split = string.split('-')
-connector_list = []
-for i in range(len(string_split)-1):
-    if string_split[i][-1].isalpha() and string_split[i+1][0].isalpha():
-        connector_list.append(' ')
-    else:
-        connector_list.append('')
-string_split[0] + ''.join([f'{connector_list[i-1]}{string_split[i]}' for i in range(1, len(string_split))])
-
+print(
+    f"The maximum abstract length after being lemmatized is: {max(abstracts_lemmatize_length)}"
+)
 
 # %%
-# write the previous code in a function
-def get_connector_list(string: str, connector: str) -> list:
+# using the maximum length of the abstracts as the maximum number of features
+count_vectorizer = CountVectorizer(max_features=800)
+
+# %%
+abstract_term_matrix = count_vectorizer.fit_transform(
+    abstract_narration_lemmatize_dataset
+)
+
+# %% [markdown]
+# As the amount of organizations that has more than 100 abstracts is 9, we are going to use that as number of topics to train our model.
+
+# %%
+n_topics = 9
+
+lda_model = LatentDirichletAllocation(
+    n_components=n_topics, learning_method="online", random_state=0, verbose=0
+)
+lda_topic_matrix = lda_model.fit_transform(abstract_term_matrix)
+
+
+# %% [markdown]
+# Define a bunch of useful functions in order to review the results and extract the most common words in each topic.
+
+# %%
+# Define helper functions
+
+
+def get_keys(topic_matrix: np.ndarray) -> list:
     """
-    Get a list with the connectors between the words in the string
+    Get the keys of the topics for each abstract
 
     Arguments:
-        string:
-            The string to analyze.
-        connector:
-            The connector to use.
+        topic_matrix:
+            The matrix with the topics for each abstract.
 
     Returns:
-        A list with the connectors between the words in the string.
+        A list with the keys of the topics for each abstract.
     """
-    # split the string by the connector
-    string_split = string.split(connector)
-    connector_list = []
-    # iterate over all the elements in the string_split
-    for i in range(len(string_split) - 1):
-        # if the last character of the first element is a letter and the first character of the second element is a letter
-        if string_split[i][-1].isalpha() and string_split[i + 1][0].isalpha():
-            connector_list.append(" ")
-        else:
-            connector_list.append(connector)
-    return connector_list
+    keys = topic_matrix.argmax(axis=1).tolist()
+    return keys
+
+
+def keys_to_counts(keys: list) -> tuple:
+    """
+    Count the amount of times that each key appears
+
+    Arguments:
+        keys:
+            The keys of the topics for each abstract.
+
+    Returns:
+        A tuple with the categories and the counts of the keys.
+    """
+    count_pairs = Counter(keys).items()
+    categories = [pair[0] for pair in count_pairs]
+    counts = [pair[1] for pair in count_pairs]
+    return (categories, counts)
+
+
+def get_top_n_words(
+    n: int,
+    keys: list,
+    document_term_matrix: np.array,
+    count_vectorizer: CountVectorizer,
+) -> list:
+    """
+    Get the top n words for each topic
+
+    Arguments:
+        n:
+            The number of words to get.
+        keys:
+            The keys of the topics for each abstract.
+        document_term_matrix:
+            The matrix with the words for each abstract.
+        count_vectorizer:
+            The CountVectorizer object.
+
+    Returns:
+        A list with the top n words for each topic.
+    """
+    # get the top n word indices
+    top_word_indices = []
+    for topic in range(n_topics):
+        temp_vector_sum = 0
+        for i in range(len(keys)):
+            if keys[i] == topic:
+                temp_vector_sum += document_term_matrix[i]
+        temp_vector_sum = temp_vector_sum.toarray()
+        top_n_word_indices = np.flip(np.argsort(temp_vector_sum)[0][-n:], 0)
+        top_word_indices.append(top_n_word_indices)
+    # get the top n words
+    top_words = []
+    for topic in top_word_indices:
+        topic_words = []
+        for index in topic:
+            temp_word_vector = np.zeros((1, document_term_matrix.shape[1]))
+            temp_word_vector[:, index] = 1
+            the_word = count_vectorizer.inverse_transform(temp_word_vector)[0][0]
+            topic_words.append(the_word.encode("ascii").decode("utf-8"))
+        top_words.append(" ".join(topic_words))
+    return top_words
 
 
 # %%
-# concat each value of string_split using connector_list and connector_list has one less element than string_split
-result = string_split[0] + ''.join([f'{connector_list[i-1]}{string_split[i]}' for i in range(1, len(string_split))])
+# get the keys of the topics for each abstract
+lda_keys = get_keys(lda_topic_matrix)
+lda_categories, lda_counts = keys_to_counts(lda_keys)
 
 # %%
-result
+# get a sample of the top words for each topic
+top_n_words_lda = get_top_n_words(10, lda_keys, abstract_term_matrix, count_vectorizer)
+
+for i in range(len(top_n_words_lda)):
+    print("Topic {}: ".format(i + 1), top_n_words_lda[i])
 
 # %%
-# find rows with word like 'covid'
-words_clean_frequency_df[words_clean_frequency_df["word"].str.contains('covid')]
+# get the top 5 words
+top_5_words = get_top_n_words(5, lda_keys, abstract_term_matrix, count_vectorizer)
+labels = ["Topic {}: \n".format(i) + top_5_words[i] for i in lda_categories]
+
+# create a bar plot to show the amount of abstracts for each topic and the top words
+fig, ax = plt.subplots(figsize=(16, 8))
+ax.bar(lda_categories, lda_counts)
+ax.set_xticks(lda_categories)
+ax.set_xticklabels(labels)
+# rotate the labels
+plt.xticks(rotation=90)
+ax.set_title("LDA topic counts")
+ax.set_ylabel("Number of headlines")
+
+# %% [markdown]
+# Finally, let's get a sample of the topics generated and the content of the abstracts and also the organization.
 
 # %%
+# for loop to print the top 5 words for each topic
+for topic in range(len(top_5_words)):
+    # select a random index for topic 0 using keys
+    random_index = random.choice([i for i, key in enumerate(lda_keys) if key == topic])
+
+    print(f"The top 5 words related to the topic {topic} are: {top_5_words[topic]}")
+    print(f"The abstract is:")
+    # print the abstract but not allow more than 100 characters per line
+    print(textwrap.fill(abstract_narration_dataset[random_index][:240], 120))
+    xml_dict = get_xml_as_dict(
+        os.path.join(dataset_folder, abstract_narration_dataset.files[random_index])
+    )
+    abstract_dict = get_award_info_from_dict(xml_dict)
+    print(f"The organization information is:")
+    print(json.dumps(abstract_dict["Organization"], indent=2))
+    print(f"The program element information is:")
+    print(json.dumps(abstract_dict["ProgramElement"], indent=2))
+    print()
+
+# %% [markdown]
+# Looking at the previous output we can see that the process is having a coincidence with the fields organization and program element. In fact, we can try to call each topic with a specific category, for example, the topic 1 is more related to `Geosciences`, in the random abstracts selected to visualize the results we can find that relationship. It's imperative to iterate this process:
+# 1. Include more stop words that can be misunderstanding the results (such as `award`, `ha`, among others)
+# 2. Improve the selection of the amount of topics to train the model [this article](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8534395/) has a methodology to calculate a better quantity of topics.
+# 3. Visualize the results reducing the dimension (t-SNE)
+# 4. Use other machine learning techniques in order to improve semantic similarity [BERTopic](https://github.com/MaartenGr/BERTopic) can be a useful tool to iterate and explore different approaches.
+#
+# Nice to have in the future to put in production: CLI commands to train and save the model, such as generate predictions.
+
+# %% [markdown]
+#

@@ -26,9 +26,9 @@ class CleanAbstract:
         - lowercase
         - removing the characters that generate &lt;br/&gt;
         - removing the URLs and websites
-        - removing the punctuation
+        - removing the punctuation (except - character when appears between two words)
         - transform the strings like 'covid-19' into 'covid19'
-        - removing the stop words
+        - removing the stop words (including new ones result of the EDA)
         - lemmatizing the words if lemmatize is True
 
         Arguments:
@@ -57,12 +57,16 @@ class CleanAbstract:
         words = word_tokenize(abstract)
         words = [word for word in words if word.isalnum()]
         stop_words = set(stopwords.words("english"))
+        # add special stop words
+        stop_words.update(
+            ["project", "research", "using", "support", "impact", "student"]
+        )
         if self.lemmatize:
             lemmatizer = WordNetLemmatizer()
             cleaned_abstract = [
                 lemmatizer.lemmatize(word)
                 for word in words
-                if word.isalnum() and word not in stop_words
+                if word.isalnum() and lemmatizer.lemmatize(word) not in stop_words
             ]
         else:
             cleaned_abstract = [word for word in words if word not in stop_words]
