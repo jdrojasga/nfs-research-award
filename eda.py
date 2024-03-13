@@ -15,6 +15,11 @@
 # ---
 
 # %%
+# Allow autoreload modules to always have the latest version
+# %load_ext autoreload
+# %autoreload 2
+
+# %%
 # include libraries to work with XML
 import xml.etree.ElementTree as ET
 import xmltodict
@@ -23,7 +28,7 @@ import sys
 import re
 import json
 import random
-from pipeline.dataloader import AbstractNarrationDataset
+from pipeline.dataloader import AbstractNarrationDataset, CleanAbstract
 
 # %%
 # look for the dataset folder that is in the previous folder to this file
@@ -58,7 +63,7 @@ def get_xml_as_dict(file_path: str) -> dict:
 
 
 # %%
-get_xml_as_dict(os.path.join(dataset_folder, "books.xml"))
+get_xml_as_dict(os.path.join(dataset_folder, "2035012.xml"))
 
 # %%
 # read the file using the xmltodict library
@@ -338,7 +343,10 @@ organization_count
 
 # %%
 # initialize the dataset
-abstract_narration_dataset = AbstractNarrationDataset(dataset_folder)
+abstract_narration_dataset = AbstractNarrationDataset(dataset_folder, None)
+
+# %%
+abstract_narration_dataset[0]
 
 # %%
 # Select a random list of abstracts
@@ -405,7 +413,7 @@ def clean_abstract(abstract: str, lemmatize: bool = False) -> str:
 
 
 # %%
-random_indexes = random.sample(range(len(abstract_narration_dataset)), 5)
+random_indexes = random.sample(range(len(abstract_narration_dataset)), 1)
 for idx in random_indexes:
     print(f"Abstract {idx + 1}")
     abstract = clean_abstract(abstract_narration_dataset[idx])
@@ -418,18 +426,169 @@ for idx in random_indexes:
     print()
 
 # %%
-abstract = word_tokenize(abstract_narration_dataset[3022])
-abstract = remove_urls(abstract)
-# print the abstract but not allow more than 100 characters per line
-print(textwrap.fill(abstract, 120))
-
-# %%
-tokenize = word_tokenize(abstract_narration_dataset[3022])
-list_stop = set(stopwords.words("english"))
-abstract = [word for word in tokenize if word not in list_stop]
-
-# %%
 # initialize the dataset including the cleaning process
-abstract_narration_clean_dataset = AbstractNarrationDataset(dataset_folder, clean=True)
+abstract_narration_clean_dataset = AbstractNarrationDataset(dataset_folder, clean=CleanAbstract())
+# initialize the dataset including the lemmatize process
+abstract_narration_lemmatize_dataset = AbstractNarrationDataset(dataset_folder, clean=CleanAbstract(lemmatize=True))
+
+# %% [markdown]
+# Now that we have the classes to load the information an also to do a clean process we are going to do an exploratory analysis in terms of the amount of words that appears in the abstracts, such as the length of each one.
+
+# %%
+# calculate the length of the abstracts
+abstracts_length = [len(abstract.split()) for abstract in abstract_narration_dataset]
+abstracts_clean_length = [len(abstract.split()) for abstract in abstract_narration_clean_dataset]
+abstracts_lemmatize_length = [len(abstract.split()) for abstract in abstract_narration_lemmatize_dataset]
+
+# %%
+# create a histogram of the length of the abstracts
+import matplotlib.pyplot as plt
+
+# create a figure with 3 subplots, in each subplot include the histogram of the length of the abstracts
+fig, axs = plt.subplots(1, 3, figsize=(10, 4))
+axs[0].hist(abstracts_length, bins=20)
+axs[0].set_title("Abstracts length")
+axs[0].set_xlabel("Length")
+axs[0].set_ylabel("Frequency")
+
+axs[1].hist(abstracts_clean_length, bins=20)
+axs[1].set_title("Abstracts length (cleaned)")
+axs[1].set_xlabel("Length")
+axs[1].set_ylabel("Frequency")
+
+axs[2].hist(abstracts_lemmatize_length, bins=20)
+axs[2].set_title("Abstracts length (lemmatized)")
+axs[2].set_xlabel("Length")
+axs[2].set_ylabel("Frequency")
+
+plt.tight_layout()
+plt.show()
+
+# %%
+len(abstracts_clean_length)
+
+# %%
+abstract_narration_dataset[2798]
+
+# %%
+abstract_narration_clean_dataset[2798]
+
+# %% [markdown]
+# Once we clean the data the distribution of cleaned and lemmatized seems similar. This is due to in the cleaning process we are extracting stop words and punctuation that can extend the length of the abstracts. Now we are going to count the distinct words generated after each cleaning process to see if there is some word that repeat a lot and can be also reduced using a technique of cleaning.
+
+# %%
+# create a dictionary with the frequency of the words in all the abstracts
+words_clean_frequency = {}
+# iterate over all the abstracts
+for abstract in abstract_narration_clean_dataset:
+    # split the abstract into words
+    words = abstract.split()
+    # iterate over all the words
+    for word in words:
+        # if the word is not in the dictionary, add it
+        if word not in words_clean_frequency:
+            words_clean_frequency[word] = 0
+        # increase the frequency of the word
+        words_clean_frequency[word] += 1
+
+# %%
+words_clean_frequency
+
+# %%
+# transform the dictionary into a dataframe
+import pandas as pd
+
+# create a dataframe with the words and the frequency
+words_clean_frequency_df = pd.DataFrame(
+    {"word": list(words_clean_frequency.keys()), "frequency": list(words_clean_frequency.values())}
+)
+
+# sort the dataframe by the frequency
+words_clean_frequency_df = words_clean_frequency_df.sort_values("frequency", ascending=False)
+
+# show the first 30 rows of the dataframe
+words_clean_frequency_df.head(30)
+
+# %%
+# create a dictionary with the frequency of the words in all the abstracts
+words_lemmatize_frequency = {}
+# iterate over all the abstracts
+for abstract in abstract_narration_lemmatize_dataset:
+    # split the abstract into words
+    words = abstract.split()
+    # iterate over all the words
+    for word in words:
+        # if the word is not in the dictionary, add it
+        if word not in words_lemmatize_frequency:
+            words_lemmatize_frequency[word] = 0
+        # increase the frequency of the word
+        words_lemmatize_frequency[word] += 1
+
+# %%
+# create a dataframe with the words and the frequency
+words_lemmatize_frequency_df = pd.DataFrame(
+    {"word": list(words_lemmatize_frequency.keys()), "frequency": list(words_lemmatize_frequency.values())}
+)
+
+# sort the dataframe by the frequency
+words_lemmatize_frequency_df = words_lemmatize_frequency_df.sort_values("frequency", ascending=False).reset_index(drop=True)
+
+# show the first 30 rows of the dataframe
+words_lemmatize_frequency_df.head(30)
+
+# %%
+words_lemmatize_frequency_df[words_lemmatize_frequency_df["frequency"] >= 100].sample(30)
+
+# %%
+string = '-'
+# split string by '-'
+string_split = string.split('-')
+connector_list = []
+for i in range(len(string_split)-1):
+    if string_split[i][-1].isalpha() and string_split[i+1][0].isalpha():
+        connector_list.append(' ')
+    else:
+        connector_list.append('')
+string_split[0] + ''.join([f'{connector_list[i-1]}{string_split[i]}' for i in range(1, len(string_split))])
+
+
+# %%
+# write the previous code in a function
+def get_connector_list(string: str, connector: str) -> list:
+    """
+    Get a list with the connectors between the words in the string
+
+    Arguments:
+        string:
+            The string to analyze.
+        connector:
+            The connector to use.
+
+    Returns:
+        A list with the connectors between the words in the string.
+    """
+    # split the string by the connector
+    string_split = string.split(connector)
+    connector_list = []
+    # iterate over all the elements in the string_split
+    for i in range(len(string_split) - 1):
+        # if the last character of the first element is a letter and the first character of the second element is a letter
+        if string_split[i][-1].isalpha() and string_split[i + 1][0].isalpha():
+            connector_list.append(" ")
+        else:
+            connector_list.append(connector)
+    return connector_list
+
+
+# %%
+# concat each value of string_split using connector_list and connector_list has one less element than string_split
+result = string_split[0] + ''.join([f'{connector_list[i-1]}{string_split[i]}' for i in range(1, len(string_split))])
+
+# %%
+result
+
+# %%
+# find rows with word like 'covid'
+words_clean_frequency_df[words_clean_frequency_df["word"].str.contains('covid')]
 
 # %%
